@@ -1,5 +1,5 @@
 [Unit]
-Description=Reverse Tunnel public server
+Description=Reverse Tunnel dashboard and one-command installer
 After=network-online.target
 Wants=network-online.target
 
@@ -7,15 +7,15 @@ Wants=network-online.target
 Type=simple
 User=tunnel
 Group=tunnel
-EnvironmentFile=/etc/reverse-tunnel/server.env
-ExecStart=/usr/local/bin/tunnel-server
+EnvironmentFile=/etc/reverse-tunnel/panel.env
+ExecStart=/usr/local/bin/tunnel-panel
 Restart=always
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/run /etc/reverse-tunnel
+ProtectHome=false
+ReadWritePaths=/etc/reverse-tunnel /opt/reverse-tunnel
 
 [Install]
 WantedBy=multi-user.target

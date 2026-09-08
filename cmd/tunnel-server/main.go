@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -35,9 +36,10 @@ func main() {
 	portStart := flag.Int("port-start", envInt("TUNNEL_PORT_START", 10000), "first allocated public port")
 	portEnd := flag.Int("port-end", envInt("TUNNEL_PORT_END", 20000), "last allocated public port")
 	token := flag.String("token", os.Getenv("TUNNEL_TOKEN"), "shared secret (required)")
+	tokenFile := flag.String("token-file", env("TUNNEL_TOKEN_FILE", ""), "file containing one allowed token per line")
 	flag.Parse()
-	if *token == "" {
-		log.Fatal("TUNNEL_TOKEN or -token is required")
+	if *token == "" && *tokenFile == "" {
+		log.Fatal("TUNNEL_TOKEN/-token or TUNNEL_TOKEN_FILE/-token-file is required")
 	}
 	if *portStart < 1 || *portEnd > 65535 || *portStart > *portEnd {
 		log.Fatal("invalid port range")
@@ -53,15 +55,15 @@ func main() {
 			log.Printf("accept: %v", err)
 			continue
 		}
-		go handle(conn, *token, *publicIP, *portStart, *portEnd)
+		go handle(conn, *token, *tokenFile, *publicIP, *portStart, *portEnd)
 	}
 }
 
-func handle(conn net.Conn, token, publicIP string, start, end int) {
+func handle(conn net.Conn, token, tokenFile, publicIP string, start, end int) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
 	f, err := protocol.Read(conn)
-	if err != nil || f.Type != protocol.Hello || f.Token != token {
+	if err != nil || f.Type != protocol.Hello || !validToken(f.Token, token, tokenFile) {
 		return
 	}
 	_ = conn.SetDeadline(time.Time{})
@@ -109,6 +111,30 @@ func handle(conn net.Conn, token, publicIP string, start, end int) {
 		delete(c.streams, id)
 	}
 	c.mu.Unlock()
+}
+
+func validToken(got, static, file string) bool {
+	if got == "" {
+		return false
+	}
+	if static != "" && got == static {
+		return true
+	}
+	if file == "" {
+		return false
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		if strings.TrimSpace(s.Text()) == got {
+			return true
+		}
+	}
+	return false
 }
 
 func acceptPublic(c *client) {

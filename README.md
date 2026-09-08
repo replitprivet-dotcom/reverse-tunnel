@@ -161,3 +161,75 @@ make build
 ```
 
 License: MIT
+
+## One-command public installer panel
+
+Agar aap users ko sirf ek command dena chahte hain, to VPS par panel ko port 8088 par run karein aur apne domain ko reverse proxy (Caddy/Nginx) se panel tak point karein. Panel `/get` par per-user temporary token generate karta hai, client binary download karta hai, aur client ko VPS control server se connect karta hai.
+
+> Note: requested `curl -sSh` command mein `-h` curl ka help option hai. Working command `curl -sS https://YOUR_DOMAIN/get | sh -s run` hai.
+
+Build/install:
+
+```bash
+sudo install -d -m 0750 /etc/reverse-tunnel /opt/reverse-tunnel
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin tunnel || true
+sudo bash deploy/install-vps.sh
+sudo touch /etc/reverse-tunnel/tokens.txt
+sudo chown tunnel:tunnel /etc/reverse-tunnel/tokens.txt
+sudo chmod 600 /etc/reverse-tunnel/tokens.txt
+```
+
+Create `/etc/reverse-tunnel/server.env`:
+
+```env
+TUNNEL_TOKEN_FILE=/etc/reverse-tunnel/tokens.txt
+TUNNEL_CONTROL=:7000
+TUNNEL_PUBLIC_IP=0.0.0.0
+TUNNEL_PORT_START=10000
+TUNNEL_PORT_END=20000
+```
+
+Create `/etc/reverse-tunnel/panel.env` and replace the domain and VPS IP:
+
+```env
+PANEL_LISTEN=127.0.0.1:8088
+PANEL_BASE_URL=https://YOUR_DOMAIN
+TUNNEL_SERVER=YOUR_VPS_PUBLIC_IP:7000
+TUNNEL_TOKEN_FILE=/etc/reverse-tunnel/tokens.txt
+CLIENT_AMD64=/opt/reverse-tunnel/tunnel-client-linux-amd64
+CLIENT_ARM64=/opt/reverse-tunnel/tunnel-client-linux-arm64
+```
+
+Install services:
+
+```bash
+sudo install -m 0644 deploy/systemd/tunnel-server.service deploy/systemd/tunnel-panel.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tunnel-server tunnel-panel
+```
+
+For a simple HTTPS reverse proxy with Caddy:
+
+```bash
+sudo apt install -y caddy
+sudo tee /etc/caddy/Caddyfile >/dev/null <<'EOF'
+YOUR_DOMAIN {
+    reverse_proxy 127.0.0.1:8088
+}
+EOF
+sudo systemctl reload caddy
+```
+
+Now user runs:
+
+```bash
+curl -sS https://YOUR_DOMAIN/get | sh -s run
+```
+
+The client prints the VPS public endpoint, for example `172.105.58.205:10000`. If the local service is not on port 8080:
+
+```bash
+TUNNEL_TARGET=127.0.0.1:3000 curl -sS https://YOUR_DOMAIN/get | sh -s run
+```
+
+Open only TCP `7000`, `8088` only locally behind Caddy, and `10000:20000` in the VPS/cloud firewall. The panel has no password by request, so anyone who knows the domain can mint a token and use the service; keep the URL private or add authentication/rate limits before broad public distribution.
